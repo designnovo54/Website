@@ -4,100 +4,429 @@ const cursorGlow = document.querySelector(".cursor-glow");
 
 const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 
-// The character has a cinematic entrance, then follows a hand-authored path.
-// This makes the figure feel like a participant in the story rather than a static mascot.
-let introDone = false;
+/* =========================================================
+   DESIGN NOVO — CHARACTER MOTION SYSTEM
+   One character. Side entrances. No content overlap.
+   ========================================================= */
+
+let currentSection = -1;
+let isMoving = false;
+
+/*
+  Each section gets its own side.
+  The character alternates sides so it feels like
+  the character is travelling through the website.
+*/
+const sectionConfig = [
+  { name: "hero", side: "right", wave: false },
+  { name: "statement", side: "left", wave: true },
+  { name: "services", side: "right", wave: true },
+  { name: "about", side: "left", wave: true },
+  { name: "why", side: "right", wave: true },
+  { name: "showcase", side: "left", wave: true },
+  { name: "partner", side: "right", wave: true },
+  { name: "contact", side: "left", wave: true }
+];
+
+const sections = [
+  ...document.querySelectorAll("[data-section]")
+];
+
+/* ---------------------------------------------------------
+   HERO INTRO
+   Close-up first → smooth zoom out → full body
+   --------------------------------------------------------- */
+
 window.addEventListener("load", () => {
-  requestAnimationFrame(() => {
-    characterStage.classList.add("ready", "hero-zoom");
-    setTimeout(() => characterStage.classList.remove("hero-zoom"), 1600);
-  });
+  if (!characterStage) return;
+
+  characterStage.classList.add("ready");
+  characterStage.classList.add("hero-character");
+
+  setTimeout(() => {
+    characterStage.classList.add("hero-reveal");
+
+    setTimeout(() => {
+      characterStage.classList.remove("hero-character");
+      characterStage.classList.remove("hero-reveal");
+    }, 1800);
+
+  }, 150);
 });
 
-function updateCharacter(){
-  const scrollY = window.scrollY;
-  const maxScroll = document.documentElement.scrollHeight - window.innerHeight;
-  const progress = maxScroll ? scrollY / maxScroll : 0;
 
-  // x/y are viewport percentages. scale controls the cinematic size at each beat.
-  // The first beat deliberately places the character in the middle of the hero copy.
-  const path = [
-    {p:0.00, x:52, y:53, s:1.26, r:0},
-    {p:0.08, x:61, y:52, s:1.04, r:4},
-    {p:0.18, x:78, y:49, s:.76, r:8},
-    {p:0.31, x:30, y:54, s:.70, r:-9},
-    {p:0.45, x:71, y:49, s:.82, r:9},
-    {p:0.60, x:54, y:57, s:.66, r:-4},
-    {p:0.74, x:26, y:50, s:.82, r:-10},
-    {p:0.87, x:72, y:55, s:.72, r:8},
-    {p:1.00, x:51, y:53, s:.94, r:0}
-  ];
+/* ---------------------------------------------------------
+   CREATE SIDE CHARACTER LANE
+   The character gets a dedicated visual area so it doesn't
+   sit on top of headings, cards or forms.
+   --------------------------------------------------------- */
 
-  let a = path[0], b = path[path.length-1];
-  for(let i=0;i<path.length-1;i++){
-    if(progress >= path[i].p && progress <= path[i+1].p){ a=path[i]; b=path[i+1]; break; }
+function createCharacterLane(section) {
+  let lane = section.querySelector(".character-lane");
+
+  if (!lane) {
+    lane = document.createElement("div");
+    lane.className = "character-lane";
+    lane.setAttribute("aria-hidden", "true");
+
+    section.appendChild(lane);
   }
-  const t = b.p === a.p ? 0 : (progress-a.p)/(b.p-a.p);
-  const ease = t*t*(3-2*t);
-  const x = a.x + (b.x-a.x)*ease;
-  const y = a.y + (b.y-a.y)*ease;
-  const scale = a.s + (b.s-a.s)*ease;
-  const rotate = a.r + (b.r-a.r)*ease;
 
-  characterStage.style.left = `${x}%`;
-  characterStage.style.top = `${y}%`;
-  characterStage.style.transform = `translate(-50%,-50%) scale(${scale})`;
-  character.style.transform = `translateY(${Math.sin(scrollY*.008)*2}px) rotateY(${rotate}deg)`;
-
-  // Hero -> wave beat -> CTA/click beat.
-  const wave = progress > .085 && progress < .22;
-  const click = progress > .78 && progress < .95;
-  characterStage.classList.toggle("wave-mode", wave);
-  characterStage.classList.toggle("click-mode", click);
-
-  if(progress > .03) characterStage.classList.add("ready");
+  return lane;
 }
 
-updateCharacter();
-window.addEventListener("scroll", updateCharacter, {passive:true});
-window.addEventListener("resize", updateCharacter);
 
-const reveals = [...document.querySelectorAll(".reveal")];
-const observer = new IntersectionObserver(entries => {
-  entries.forEach(entry => {
-    if(entry.isIntersecting) entry.target.classList.add("visible");
-  });
-},{threshold:.12, rootMargin:"0px 0px -7% 0px"});
-reveals.forEach(el => observer.observe(el));
+/* ---------------------------------------------------------
+   MOVE CHARACTER INTO ACTIVE SECTION
+   --------------------------------------------------------- */
 
-if(cursorGlow){
-  window.addEventListener("pointermove", e => {
-    cursorGlow.style.left = `${e.clientX}px`;
-    cursorGlow.style.top = `${e.clientY}px`;
-  }, {passive:true});
+function moveCharacterToSection(index) {
+  if (!characterStage || !sections[index]) return;
+  if (currentSection === index) return;
+
+  currentSection = index;
+  isMoving = true;
+
+  const section = sections[index];
+  const config = sectionConfig[index] || {
+    side: index % 2 === 0 ? "right" : "left",
+    wave: true
+  };
+
+  const lane = createCharacterLane(section);
+
+  /*
+    Move the SAME character element into the section.
+    There is never a second character.
+  */
+  lane.appendChild(characterStage);
+
+  characterStage.classList.remove(
+    "character-left",
+    "character-right",
+    "walking-in",
+    "arrived",
+    "wave-mode",
+    "click-mode"
+  );
+
+  characterStage.classList.add(
+    config.side === "left"
+      ? "character-left"
+      : "character-right"
+  );
+
+  /*
+    Force the entrance animation to restart.
+  */
+  void characterStage.offsetWidth;
+
+  characterStage.classList.add("walking-in");
+
+  setTimeout(() => {
+    characterStage.classList.remove("walking-in");
+    characterStage.classList.add("arrived");
+
+    if (config.wave) {
+      setTimeout(() => {
+        characterStage.classList.add("wave-mode");
+
+        setTimeout(() => {
+          characterStage.classList.remove("wave-mode");
+        }, 1200);
+
+      }, 120);
+    }
+
+    isMoving = false;
+
+  }, 850);
 }
 
-document.querySelectorAll(".service-card").forEach(card => {
-  card.addEventListener("pointermove", e => {
-    const r = card.getBoundingClientRect();
-    const x = (e.clientX-r.left)/r.width-.5;
-    const y = (e.clientY-r.top)/r.height-.5;
-    card.style.transform = `perspective(800px) rotateX(${y*-5}deg) rotateY(${x*6}deg) translateY(-8px)`;
+
+/* ---------------------------------------------------------
+   SECTION DETECTION
+   The character changes position when a new section becomes
+   the dominant section on screen.
+   --------------------------------------------------------- */
+
+const sectionObserver = new IntersectionObserver(
+  entries => {
+
+    let bestEntry = null;
+
+    entries.forEach(entry => {
+      if (!entry.isIntersecting) return;
+
+      if (
+        !bestEntry ||
+        entry.intersectionRatio > bestEntry.intersectionRatio
+      ) {
+        bestEntry = entry;
+      }
+    });
+
+    if (!bestEntry) return;
+
+    const index = sections.indexOf(bestEntry.target);
+
+    if (index !== -1) {
+      moveCharacterToSection(index);
+    }
+  },
+  {
+    threshold: [0.2, 0.35, 0.5, 0.65],
+    rootMargin: "-10% 0px -20% 0px"
+  }
+);
+
+sections.forEach(section => {
+  sectionObserver.observe(section);
+});
+
+
+/* ---------------------------------------------------------
+   FALLBACK SCROLL CHECK
+   Makes section switching reliable on different screen sizes.
+   --------------------------------------------------------- */
+
+function checkActiveSection() {
+  if (!sections.length) return;
+
+  const viewportPoint = window.innerHeight * 0.42;
+
+  let closestIndex = 0;
+  let closestDistance = Infinity;
+
+  sections.forEach((section, index) => {
+    const rect = section.getBoundingClientRect();
+
+    const sectionCenter =
+      rect.top + rect.height / 2;
+
+    const distance =
+      Math.abs(sectionCenter - viewportPoint);
+
+    if (distance < closestDistance) {
+      closestDistance = distance;
+      closestIndex = index;
+    }
   });
-  card.addEventListener("pointerleave", () => card.style.transform = "");
+
+  if (closestDistance < window.innerHeight * 0.65) {
+    moveCharacterToSection(closestIndex);
+  }
+}
+
+let scrollTick = false;
+
+window.addEventListener(
+  "scroll",
+  () => {
+
+    if (scrollTick) return;
+
+    scrollTick = true;
+
+    requestAnimationFrame(() => {
+      checkActiveSection();
+      scrollTick = false;
+    });
+
+  },
+  { passive: true }
+);
+
+window.addEventListener(
+  "resize",
+  () => {
+    checkActiveSection();
+  },
+  { passive: true }
+);
+
+
+/* ---------------------------------------------------------
+   CHARACTER BODY MOTION
+   Small natural movement while standing.
+   --------------------------------------------------------- */
+
+let motionFrame = null;
+
+function characterIdleMotion(time) {
+
+  if (!character || !characterStage) {
+    motionFrame = requestAnimationFrame(characterIdleMotion);
+    return;
+  }
+
+  if (!isMoving && characterStage.classList.contains("arrived")) {
+
+    const floatY =
+      Math.sin(time * 0.0018) * 2;
+
+    const floatRotate =
+      Math.sin(time * 0.0012) * 0.35;
+
+    character.style.transform =
+      `translateY(${floatY}px) rotateY(${floatRotate}deg)`;
+
+  }
+
+  motionFrame =
+    requestAnimationFrame(characterIdleMotion);
+}
+
+motionFrame =
+  requestAnimationFrame(characterIdleMotion);
+
+
+/* ---------------------------------------------------------
+   CURSOR GLOW
+   --------------------------------------------------------- */
+
+if (cursorGlow) {
+
+  window.addEventListener(
+    "pointermove",
+    e => {
+
+      cursorGlow.style.left =
+        `${e.clientX}px`;
+
+      cursorGlow.style.top =
+        `${e.clientY}px`;
+
+    },
+    { passive: true }
+  );
+
+}
+
+
+/* ---------------------------------------------------------
+   SERVICE CARD 3D TILT
+   --------------------------------------------------------- */
+
+document
+  .querySelectorAll(".service-card")
+  .forEach(card => {
+
+    card.addEventListener(
+      "pointermove",
+      e => {
+
+        const rect =
+          card.getBoundingClientRect();
+
+        const x =
+          (e.clientX - rect.left) /
+          rect.width - 0.5;
+
+        const y =
+          (e.clientY - rect.top) /
+          rect.height - 0.5;
+
+        card.style.transform =
+          `perspective(800px)
+           rotateX(${y * -5}deg)
+           rotateY(${x * 6}deg)
+           translateY(-8px)`;
+      }
+    );
+
+    card.addEventListener(
+      "pointerleave",
+      () => {
+        card.style.transform = "";
+      }
+    );
+
+  });
+
+
+/* ---------------------------------------------------------
+   REVEAL ANIMATIONS
+   --------------------------------------------------------- */
+
+const reveals =
+  [...document.querySelectorAll(".reveal")];
+
+const revealObserver =
+  new IntersectionObserver(
+    entries => {
+
+      entries.forEach(entry => {
+
+        if (entry.isIntersecting) {
+          entry.target.classList.add("visible");
+        }
+
+      });
+
+    },
+    {
+      threshold: 0.12,
+      rootMargin: "0px 0px -7% 0px"
+    }
+  );
+
+reveals.forEach(el => {
+  revealObserver.observe(el);
 });
 
-const form = document.querySelector("#contactForm");
-const toast = document.querySelector("#toast");
-form.addEventListener("submit", e => {
-  e.preventDefault();
-  toast.classList.add("show");
-  form.reset();
-  setTimeout(()=>toast.classList.remove("show"),3500);
-});
 
-// Keep the character readable over the content while making sure it never blocks interaction.
-document.querySelectorAll("a,button,input,textarea").forEach(el=>{
-  el.addEventListener("mouseenter",()=>characterStage.style.opacity=".92");
-  el.addEventListener("mouseleave",()=>characterStage.style.opacity="1");
-});
+/* ---------------------------------------------------------
+   CONTACT FORM
+   --------------------------------------------------------- */
+
+const form =
+  document.querySelector("#contactForm");
+
+const toast =
+  document.querySelector("#toast");
+
+if (form && toast) {
+
+  form.addEventListener(
+    "submit",
+    e => {
+
+      e.preventDefault();
+
+      toast.classList.add("show");
+
+      form.reset();
+
+      setTimeout(
+        () => {
+          toast.classList.remove("show");
+        },
+        3500
+      );
+
+    }
+  );
+
+}
+
+
+/* ---------------------------------------------------------
+   INTERACTION SAFETY
+   Character never blocks buttons/forms.
+   --------------------------------------------------------- */
+
+if (characterStage) {
+
+  characterStage.style.pointerEvents = "none";
+
+}
+
+
+/* ---------------------------------------------------------
+   INITIAL SECTION
+   --------------------------------------------------------- */
+
+setTimeout(() => {
+  checkActiveSection();
+}, 1000);
