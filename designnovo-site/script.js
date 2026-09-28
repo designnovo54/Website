@@ -2,64 +2,21 @@ const characterStage = document.querySelector("#characterStage");
 const character = document.querySelector("#character");
 const cursorGlow = document.querySelector(".cursor-glow");
 
-const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
-
-/* =========================================================
-   DESIGN NOVO — CHARACTER MOTION SYSTEM
-   One character. Side entrances. No content overlap.
-   ========================================================= */
+const sections = [...document.querySelectorAll("[data-section]")];
 
 let currentSection = -1;
 let isMoving = false;
 
-/*
-  Each section gets its own side.
-  The character alternates sides so it feels like
-  the character is travelling through the website.
-*/
 const sectionConfig = [
   { name: "hero", side: "right", wave: false },
-  { name: "statement", side: "left", wave: true },
-  { name: "services", side: "right", wave: true },
-  { name: "about", side: "left", wave: true },
-  { name: "why", side: "right", wave: true },
-  { name: "showcase", side: "left", wave: true },
-  { name: "partner", side: "right", wave: true },
-  { name: "contact", side: "left", wave: true }
+  { name: "statement", side: "right", enter: "left", wave: true },
+  { name: "services", side: "right", enter: "right", wave: true },
+  { name: "about", side: "right", enter: "left", wave: true },
+  { name: "why", side: "right", enter: "right", wave: true },
+  { name: "showcase", side: "right", enter: "left", wave: true },
+  { name: "partner", side: "right", enter: "right", wave: true },
+  { name: "contact", side: "right", enter: "left", wave: true }
 ];
-
-const sections = [
-  ...document.querySelectorAll("[data-section]")
-];
-
-/* ---------------------------------------------------------
-   HERO INTRO
-   Close-up first → smooth zoom out → full body
-   --------------------------------------------------------- */
-
-window.addEventListener("load", () => {
-  if (!characterStage) return;
-
-  characterStage.classList.add("ready");
-  characterStage.classList.add("hero-character");
-
-  setTimeout(() => {
-    characterStage.classList.add("hero-reveal");
-
-    setTimeout(() => {
-      characterStage.classList.remove("hero-character");
-      characterStage.classList.remove("hero-reveal");
-    }, 1800);
-
-  }, 150);
-});
-
-
-/* ---------------------------------------------------------
-   CREATE SIDE CHARACTER LANE
-   The character gets a dedicated visual area so it doesn't
-   sit on top of headings, cards or forms.
-   --------------------------------------------------------- */
 
 function createCharacterLane(section) {
   let lane = section.querySelector(".character-lane");
@@ -68,40 +25,18 @@ function createCharacterLane(section) {
     lane = document.createElement("div");
     lane.className = "character-lane";
     lane.setAttribute("aria-hidden", "true");
-
     section.appendChild(lane);
   }
 
   return lane;
 }
 
-
-/* ---------------------------------------------------------
-   MOVE CHARACTER INTO ACTIVE SECTION
-   --------------------------------------------------------- */
-
-function moveCharacterToSection(index) {
-  if (!characterStage || !sections[index]) return;
-  if (currentSection === index) return;
-
-  currentSection = index;
-  isMoving = true;
-
-  const section = sections[index];
-  const config = sectionConfig[index] || {
-    side: index % 2 === 0 ? "right" : "left",
-    wave: true
-  };
-
-  const lane = createCharacterLane(section);
-
-  /*
-    Move the SAME character element into the section.
-    There is never a second character.
-  */
-  lane.appendChild(characterStage);
+function clearCharacterModes() {
+  if (!characterStage) return;
 
   characterStage.classList.remove(
+    "hero-character",
+    "hero-reveal",
     "character-left",
     "character-right",
     "walking-in",
@@ -109,89 +44,105 @@ function moveCharacterToSection(index) {
     "wave-mode",
     "click-mode"
   );
+}
+
+function showHero() {
+  if (!characterStage) return;
+
+  const hero = sections[0];
+
+  if (!hero) return;
+
+  const lane = createCharacterLane(hero);
+
+  lane.classList.remove("lane-left", "lane-right");
+  lane.classList.add("lane-right");
+
+  lane.appendChild(characterStage);
+
+  clearCharacterModes();
+
+  characterStage.classList.add("ready", "hero-character");
+
+  void characterStage.offsetWidth;
+
+  characterStage.classList.add("hero-reveal");
+
+  currentSection = 0;
+  isMoving = false;
+}
+
+function moveCharacterToSection(index) {
+  if (!characterStage || !sections[index] || index === 0) return;
+
+  if (currentSection === index) return;
+
+  currentSection = index;
+  isMoving = true;
+
+  const section = sections[index];
+  const config = sectionConfig[index] || {
+    side: "right",
+    wave: true
+  };
+
+  const lane = createCharacterLane(section);
+
+  lane.classList.remove("lane-left", "lane-right");
+  lane.classList.add("lane-right");
+
+  lane.appendChild(characterStage);
+
+  clearCharacterModes();
 
   characterStage.classList.add(
-    config.side === "left"
-      ? "character-left"
-      : "character-right"
+    "ready",
+    "character-right"
   );
 
-  /*
-    Force the entrance animation to restart.
-  */
+  characterStage.classList.add(
+    config.enter === "left"
+      ? "walk-enter-left"
+      : "walk-enter-right"
+  );
+
   void characterStage.offsetWidth;
 
   characterStage.classList.add("walking-in");
 
   setTimeout(() => {
-    characterStage.classList.remove("walking-in");
+
+    characterStage.classList.remove(
+      "walking-in",
+      "walk-enter-left",
+      "walk-enter-right"
+    );
+
     characterStage.classList.add("arrived");
 
     if (config.wave) {
+
       setTimeout(() => {
+
+        if (currentSection !== index) return;
+
         characterStage.classList.add("wave-mode");
 
         setTimeout(() => {
           characterStage.classList.remove("wave-mode");
-        }, 1200);
+        }, 1500);
 
-      }, 120);
+      }, 160);
     }
 
     isMoving = false;
 
-  }, 850);
+  }, 900);
 }
 
+function getClosestSection() {
 
-/* ---------------------------------------------------------
-   SECTION DETECTION
-   The character changes position when a new section becomes
-   the dominant section on screen.
-   --------------------------------------------------------- */
-
-const sectionObserver = new IntersectionObserver(
-  entries => {
-
-    let bestEntry = null;
-
-    entries.forEach(entry => {
-      if (!entry.isIntersecting) return;
-
-      if (
-        !bestEntry ||
-        entry.intersectionRatio > bestEntry.intersectionRatio
-      ) {
-        bestEntry = entry;
-      }
-    });
-
-    if (!bestEntry) return;
-
-    const index = sections.indexOf(bestEntry.target);
-
-    if (index !== -1) {
-      moveCharacterToSection(index);
-    }
-  },
-  {
-    threshold: [0.2, 0.35, 0.5, 0.65],
-    rootMargin: "-10% 0px -20% 0px"
-  }
-);
-
-sections.forEach(section => {
-  sectionObserver.observe(section);
-});
-
-
-/* ---------------------------------------------------------
-   FALLBACK SCROLL CHECK
-   Makes section switching reliable on different screen sizes.
-   --------------------------------------------------------- */
-
-function checkActiveSection() {
-  if (!sections.length) return;
+  if (!sections.length) return 0;
 
   const viewportPoint = window.innerHeight * 0.42;
 
@@ -199,24 +150,78 @@ function checkActiveSection() {
   let closestDistance = Infinity;
 
   sections.forEach((section, index) => {
+
     const rect = section.getBoundingClientRect();
 
-    const sectionCenter =
+    const center =
       rect.top + rect.height / 2;
 
     const distance =
-      Math.abs(sectionCenter - viewportPoint);
+      Math.abs(center - viewportPoint);
 
     if (distance < closestDistance) {
+
       closestDistance = distance;
       closestIndex = index;
+
     }
+
   });
 
-  if (closestDistance < window.innerHeight * 0.65) {
-    moveCharacterToSection(closestIndex);
-  }
+  return closestIndex;
 }
+
+const sectionObserver =
+  new IntersectionObserver(entries => {
+
+    let bestEntry = null;
+
+    entries.forEach(entry => {
+
+      if (!entry.isIntersecting) return;
+
+      if (
+        !bestEntry ||
+        entry.intersectionRatio >
+        bestEntry.intersectionRatio
+      ) {
+        bestEntry = entry;
+      }
+
+    });
+
+    if (!bestEntry) return;
+
+    const index =
+      sections.indexOf(bestEntry.target);
+
+    if (index === 0) {
+
+      showHero();
+
+    } else if (index > 0) {
+
+      moveCharacterToSection(index);
+
+    }
+
+  }, {
+
+    threshold: [
+      0.2,
+      0.35,
+      0.5,
+      0.65
+    ],
+
+    rootMargin:
+      "-10% 0px -20% 0px"
+
+  });
+
+sections.forEach(section => {
+  sectionObserver.observe(section);
+});
 
 let scrollTick = false;
 
@@ -229,8 +234,24 @@ window.addEventListener(
     scrollTick = true;
 
     requestAnimationFrame(() => {
-      checkActiveSection();
+
+      const index =
+        getClosestSection();
+
+      if (index === 0) {
+
+        if (currentSection !== 0) {
+          showHero();
+        }
+
+      } else {
+
+        moveCharacterToSection(index);
+
+      }
+
       scrollTick = false;
+
     });
 
   },
@@ -240,50 +261,30 @@ window.addEventListener(
 window.addEventListener(
   "resize",
   () => {
-    checkActiveSection();
+
+    const index =
+      getClosestSection();
+
+    if (index === 0) {
+
+      showHero();
+
+    } else {
+
+      moveCharacterToSection(index);
+
+    }
+
   },
   { passive: true }
 );
 
+if (characterStage) {
 
-/* ---------------------------------------------------------
-   CHARACTER BODY MOTION
-   Small natural movement while standing.
-   --------------------------------------------------------- */
+  characterStage.style.pointerEvents =
+    "none";
 
-let motionFrame = null;
-
-function characterIdleMotion(time) {
-
-  if (!character || !characterStage) {
-    motionFrame = requestAnimationFrame(characterIdleMotion);
-    return;
-  }
-
-  if (!isMoving && characterStage.classList.contains("arrived")) {
-
-    const floatY =
-      Math.sin(time * 0.0018) * 2;
-
-    const floatRotate =
-      Math.sin(time * 0.0012) * 0.35;
-
-    character.style.transform =
-      `translateY(${floatY}px) rotateY(${floatRotate}deg)`;
-
-  }
-
-  motionFrame =
-    requestAnimationFrame(characterIdleMotion);
 }
-
-motionFrame =
-  requestAnimationFrame(characterIdleMotion);
-
-
-/* ---------------------------------------------------------
-   CURSOR GLOW
-   --------------------------------------------------------- */
 
 if (cursorGlow) {
 
@@ -304,9 +305,9 @@ if (cursorGlow) {
 }
 
 
-/* ---------------------------------------------------------
-   SERVICE CARD 3D TILT
-   --------------------------------------------------------- */
+/* -----------------------------------------
+   SERVICE CARD TILT
+----------------------------------------- */
 
 document
   .querySelectorAll(".service-card")
@@ -332,22 +333,25 @@ document
            rotateX(${y * -5}deg)
            rotateY(${x * 6}deg)
            translateY(-8px)`;
+
       }
     );
 
     card.addEventListener(
       "pointerleave",
       () => {
+
         card.style.transform = "";
+
       }
     );
 
   });
 
 
-/* ---------------------------------------------------------
-   REVEAL ANIMATIONS
-   --------------------------------------------------------- */
+/* -----------------------------------------
+   GENERAL REVEAL ANIMATIONS
+----------------------------------------- */
 
 const reveals =
   [...document.querySelectorAll(".reveal")];
@@ -359,7 +363,11 @@ const revealObserver =
       entries.forEach(entry => {
 
         if (entry.isIntersecting) {
-          entry.target.classList.add("visible");
+
+          entry.target.classList.add(
+            "visible"
+          );
+
         }
 
       });
@@ -367,18 +375,21 @@ const revealObserver =
     },
     {
       threshold: 0.12,
-      rootMargin: "0px 0px -7% 0px"
+      rootMargin:
+        "0px 0px -7% 0px"
     }
   );
 
 reveals.forEach(el => {
+
   revealObserver.observe(el);
+
 });
 
 
-/* ---------------------------------------------------------
+/* -----------------------------------------
    CONTACT FORM
-   --------------------------------------------------------- */
+----------------------------------------- */
 
 const form =
   document.querySelector("#contactForm");
@@ -398,12 +409,11 @@ if (form && toast) {
 
       form.reset();
 
-      setTimeout(
-        () => {
-          toast.classList.remove("show");
-        },
-        3500
-      );
+      setTimeout(() => {
+
+        toast.classList.remove("show");
+
+      }, 3500);
 
     }
   );
@@ -411,22 +421,30 @@ if (form && toast) {
 }
 
 
-/* ---------------------------------------------------------
-   INTERACTION SAFETY
-   Character never blocks buttons/forms.
-   --------------------------------------------------------- */
+/* -----------------------------------------
+   INITIAL CHARACTER STATE
+----------------------------------------- */
 
-if (characterStage) {
+window.addEventListener(
+  "load",
+  () => {
 
-  characterStage.style.pointerEvents = "none";
+    setTimeout(() => {
 
-}
+      const index =
+        getClosestSection();
 
+      if (index === 0) {
 
-/* ---------------------------------------------------------
-   INITIAL SECTION
-   --------------------------------------------------------- */
+        showHero();
 
-setTimeout(() => {
-  checkActiveSection();
-}, 1000);
+      } else {
+
+        moveCharacterToSection(index);
+
+      }
+
+    }, 250);
+
+  }
+);
